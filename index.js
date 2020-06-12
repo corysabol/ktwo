@@ -53,7 +53,22 @@ program
     kdbxweb.Kdbx.load(data.buffer, credentials)
       .then(db => {
         db.groups[0].forEach((entry, group) => {
-          console.log(entry, group);
+          if (group) {
+            console.log(
+              chalk.blue(group.name)
+            );
+          }
+          if (entry) {
+            console.log(
+              chalk.blue(
+                `  Title:    ${entry.fields.Title}\n` +
+                `  UserName: ${entry.fields.UserName}\n` +
+                `  Password: ${entry.fields.Password}\n` +
+                `  URL:      ${entry.fields.URL}\n` +
+                `  Notes:    ${entry.fields.Notes}\n`
+              )
+            );
+          }
           //console.log(
           //  chalk.green(group.name)
           //);
@@ -96,6 +111,7 @@ program
         );
         if (options.askpass) {
           password = await askPassword('Enter a password for the entry:');
+          password = password.password;
         } else {
           password = getRandomPass();
         }
@@ -108,7 +124,7 @@ program
         }
         let entry = db.createEntry(group);
         entry.fields.Title = options.title;
-        entry.fields.UserName = options.username;
+        entry.fields.UserName = options.user;
         entry.fields.URL = options.url;
         entry.fields.Password = password;
         entry.fields.Notes = options.note;
