@@ -1,0 +1,37 @@
+{
+  "name": "k2",
+  "version": "0.1.0",
+  "description": "Simple CLI wrapper around the keexweb library of the awesome keeweb!",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/corysabol/k2.git"
+  },
+  "keywords": [
+    "keepass2",
+    "keexweb",
+    "cli"
+  ],
+  "author": "Cory Sabol",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/corysabol/k2/issues"
+  },
+  "homepage": "https://github.com/corysabol/k2#readme",
+  "dependencies": {
+    "chalk": "^4.1.0",
+    "clui": "^0.3.6",
+    "commander": "^5.1.0",
+    "configstore": "^5.0.1",
+    "figlet": "^1.4.0",
+    "inquirer": "^7.1.0",
+    "kdbxweb": "^1.9.0"
+  },
+  "bin": {
+    "k2": "./index.js"
+  }
+}
