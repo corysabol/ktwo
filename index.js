@@ -44,6 +44,9 @@ program
   .command('list <dbpath>')
   .alias('l')
   .description('list the entries in the specified database file')
+  .option('-g --group <group>', 'The group to search in')
+  .option('-t --title <title>', 'The title of the entry to list')
+  .option('-a --all', 'List all entries', false)
   .action(async (dbpath, options) => {
     let password = await askPassword();
     let credentials = new kdbxweb.Credentials(kdbxweb.ProtectedValue.fromString(password.password));
@@ -53,12 +56,12 @@ program
     kdbxweb.Kdbx.load(data.buffer, credentials)
       .then(db => {
         db.groups[0].forEach((entry, group) => {
-          if (group) {
+          if ((options.all && group) || (group && group.name === options.group)) {
             console.log(
               chalk.blue(group.name)
             );
           }
-          if (entry) {
+          if ((options.all && entry) || (entry && entry.parentGroup.name === options.group)) {
             console.log(
               chalk.blue(
                 `  Title:    ${entry.fields.Title}\n` +
@@ -69,16 +72,6 @@ program
               )
             );
           }
-          //console.log(
-          //  chalk.green(group.name)
-          //);
-          //group.entries.forEach(entry => {
-          //  Object.keys(entry.fields).forEach(field => {
-          //    console.log(
-          //      `  ${chalk.blue(field)}`
-          //    );
-          //  });
-          //});
         });
       })
       .catch(err => console.log(err));
@@ -110,12 +103,12 @@ program
           chalk.green('Successfully opened db!')
         );
         if (options.askpass) {
-          password = await askPassword('Enter a password for the entry:');
-          password = password.password;
+          let _password = await askPassword('Enter a password for the entry:');
+          password = _password.password;
         } else {
           password = getRandomPass();
         }
-        //password = kdbxweb.ProtectedValue.fromString(password);
+        password = kdbxweb.ProtectedValue.fromString(password);
         let group;
         if (options.group && options.group !== 'default') {
           group = db.createGroup(db.getDefaultGroup(), options.group);
@@ -180,13 +173,13 @@ program
 program.option('-s --silent', 'silence output');
 
 async function main() {
-  program.parseAsync(process.argv);
-  /*if (!program.silent) {
+  if (!program.silent) {
     console.log(
       chalk.green(
         figlet.textSync('k2', { horizontalLayout: 'full' })
       )
     );
-  }*/
+  }
+  program.parseAsync(process.argv);
 }
 main();
