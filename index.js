@@ -50,9 +50,7 @@ program
   .action(async (dbpath, options) => {
     let password = await askPassword();
     let credentials = new kdbxweb.Credentials(kdbxweb.ProtectedValue.fromString(password.password));
-    //let credentials = new kdbxweb.Credentials(kdbxweb.ProtectedValue.fromString('password'));
     const data = new Uint8Array(fs.readFileSync(dbpath));
-    //let db = await kdbxweb.Kdbx.load(data.buffer, credentials);
     kdbxweb.Kdbx.load(data.buffer, credentials)
       .then(db => {
         db.groups[0].forEach((entry, group) => {
@@ -151,8 +149,8 @@ program
     let password = await askPassword();
     let credentials = new kdbxweb.Credentials(kdbxweb.ProtectedValue.fromString(password.password));
     let newDb = kdbxweb.Kdbx.create(credentials, options.dbname);
-    let group = newDb.createGroup(newDb.getDefaultGroup(), 'k2');
-    let entry = newDb.createEntry(group);
+    //let group = newDb.createGroup(newDb.getDefaultGroup(), 'k2');
+    //let entry = newDb.createEntry(group);
     // write the database file out.
     newDb.upgrade();
     newDb.save()
