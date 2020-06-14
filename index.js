@@ -9,6 +9,9 @@ const figlet = require('figlet');
 const kdbxweb = require('kdbxweb');
 const { program } = require('commander');
 const argon2 = require('kdbxweb/test/test-support/argon2');
+const ConfigStore = require('configstore');
+
+const PKG_NAME = 'k2';
 
 // hacky use of the test implementation of argon2 found in kdbxweb
 kdbxweb.CryptoEngine.argon2 = argon2;
@@ -180,16 +183,26 @@ program
 program
   .command('newdb <dbpath>')
   .alias('n')
-  .option("-n --dbname <dbname>", "the name of the database")
   .description('create a new database file')
+  .option('-s --bucket <bucket>', 'The s3 url to sync the database and config to', '')
   .action(async (dbpath, options) => {
+    let dbname = dbpath.split('/').pop();
+    let config = new ConfigStore(`${PKG_NAME}-${dbname}`, {
+      path: dbpath,
+      name: dbname,
+      syncBucket: options.bucket,
+      foo: 'bar'
+    });
+    console.log(
+      chalk.yellow(`config file: ${config.path}`)
+    );
     console.log(
       chalk.yellow('initializing DB')
     );
 
     let password = await askPassword();
     let credentials = new kdbxweb.Credentials(kdbxweb.ProtectedValue.fromString(password.password));
-    let newDb = kdbxweb.Kdbx.create(credentials, options.dbname);
+    let newDb = kdbxweb.Kdbx.create(credentials, dbname);
     //let group = newDb.createGroup(newDb.getDefaultGroup(), 'k2');
     //let entry = newDb.createEntry(group);
     // write the database file out.
@@ -209,16 +222,12 @@ program
     console.log('');
   });
 
-program.option('-s --silent', 'silence output');
-
 async function main() {
-  if (!program.silent) {
-    console.log(
-      chalk.green(
-        figlet.textSync('k2', { horizontalLayout: 'full' })
-      )
-    );
-  }
+  console.log(
+    chalk.green(
+      figlet.textSync('k2', { horizontalLayout: 'full' })
+    )
+  );
   program.parseAsync(process.argv);
 }
 main();
