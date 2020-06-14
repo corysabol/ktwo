@@ -21,6 +21,24 @@ kdbxweb.CryptoEngine.argon2 = argon2;
 
 function getRandomPass() {}
 
+function findGroup() {}
+
+function listGroup() {}
+
+function findEntry() {}
+
+function listEntry(entry, color) {
+  return  chalk.keyword(color)(
+    `  Title:    ${entry.fields.Title}\n` +
+    `  UserName: ${entry.fields.UserName}\n` +
+    `  Password: ${entry.fields.Password}\n` +
+    `  URL:      ${entry.fields.URL}\n` +
+    `  Notes:    ${entry.fields.Notes}\n`
+  );
+}
+
+function ask(prompt, type) {}
+
 function askPassword(prompt) {
   const questions = [
     {
@@ -53,23 +71,36 @@ program
     const data = new Uint8Array(fs.readFileSync(dbpath));
     kdbxweb.Kdbx.load(data.buffer, credentials)
       .then(db => {
-        db.groups[0].forEach((entry, group) => {
-          if ((options.all && group) || (group && group.name === options.group)) {
+        // TODO: Refactor this ugly ass code, there's surely a cleaner way to filter
+        // the groups and entries...
+
+        db.groups[0].forEach((entry, group) =>{
+          let groupname;
+          if (!options.group && group) {
+            groupname = group.name;
+          } else {
+            groupname = options.group; 
+          }
+          if (group && groupname === group.name) {
             console.log(
-              chalk.blue(group.name)
+              chalk.yellow.bold(group.name)
             );
           }
-          if ((options.all && entry) || (entry && entry.parentGroup.name === options.group)) {
-            console.log(
-              chalk.blue(
-                `  Title:    ${entry.fields.Title}\n` +
-                `  UserName: ${entry.fields.UserName}\n` +
-                `  Password: ${entry.fields.Password}\n` +
-                `  URL:      ${entry.fields.URL}\n` +
-                `  Notes:    ${entry.fields.Notes}\n`
-              )
-            );
+
+          let entrytitle;
+          if (!options.title && entry) {
+            entrytitle = entry.fields.Title;
+          } else {
+            entrytitle = options.title;
           }
+          if (entry && !options.group) {
+            groupname = entry.parentGroup.name;
+          }
+          if (entry && entrytitle === entry.fields.Title && entry.parentGroup.name === groupname) { 
+            console.log(
+              listEntry(entry, 'lightblue')
+            );
+          } 
         });
       })
       .catch(err => console.log(err));
@@ -106,10 +137,20 @@ program
         } else {
           password = getRandomPass();
         }
-        password = kdbxweb.ProtectedValue.fromString(password);
+        //password = kdbxweb.ProtectedValue.fromString(password);
         let group;
         if (options.group && options.group !== 'default') {
-          group = db.createGroup(db.getDefaultGroup(), options.group);
+          // does the group already exist in the db?
+          // if so we just get it
+          db.groups[0].forEach((entry, _group) => {
+            if (_group && _group.name === options.group) {
+              group = _group;
+            }
+          });
+          // the group didn't exist in the db so we create it
+          if (!group) {
+            group = db.createGroup(db.getDefaultGroup(), options.group);
+          }
         } else {
           group = db.getDefaultGroup();
         }
