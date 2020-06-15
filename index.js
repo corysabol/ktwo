@@ -10,6 +10,8 @@ const kdbxweb = require('kdbxweb');
 const { program } = require('commander');
 const argon2 = require('kdbxweb/test/test-support/argon2');
 const ConfigStore = require('configstore');
+const AWS = require('aws-sdk');
+const s3 = new AWS.S3();
 
 const PKG_NAME = 'k2';
 
@@ -21,6 +23,38 @@ kdbxweb.CryptoEngine.argon2 = argon2;
     // your implementation makes hash (Uint32Array, 'length' bytes)
     return Promise.resolve(hash);
 };*/
+
+function syncS3(db, config) {
+  // https://docs.aws.amazon.com/AWSJavaScriptSDK/latest/AWS/S3.html#putObject-property
+  let dbUploadParams = {
+    Body: Buffer.from(db),
+    Bucket: config.get('syncBucket').split('/').pop(),
+    Key: `k2/${config.get('name').split('.')[0]}/${config.get('name')}`,
+    //ServerSideEncryption: 'AES256'
+    Tagging: "application=k2&type=kdbx4"
+  };
+
+  console.log(config.get('syncBucket').split('/').pop());
+  let configUploadParams = {
+    Body: fs.readFileSync(config.path),
+    Bucket: config.get('syncBucket').split('/').pop(),
+    Key: `k2/${config.get('name').split('.')[0]}/${config.get('name')}.json`,
+    Tagging: "application=k2&type=k2config"
+  };
+
+  let dbUploadPromise = s3.putObject(dbUploadParams).promise();
+  let configUploadPromise = s3.putObject(configUploadParams).promise();
+
+  Promise.all([dbUploadPromise, configUploadPromise]).then(values => {
+    console.log(
+      chalk.green('DB synced to S3 bucket!')
+    );
+  }).catch(err => {
+    console.log(
+      chalk.red(err)
+    );
+  });
+}
 
 function getRandomPass() {}
 
@@ -120,6 +154,8 @@ program
   .option('-n --note <note>', 'A note for the entry')
   .option('-a --askpass', 'If supplied the user will be prompted for a password, otherwise a random one is generated', false)
   .action(async (dbpath, options) => {
+    let dbname = dbpath.split('/').pop();
+    let config = new ConfigStore(`${PKG_NAME}-${dbname}`);
     let password = await askPassword('Enter the database password:');
     let credentals = new kdbxweb.Credentials(kdbxweb.ProtectedValue.fromString(password.password));
     // load the db
@@ -171,7 +207,9 @@ program
           .then(db => {
             fs.writeFileSync(dbpath, Buffer.from(db));
             console.log(chalk.green('DB saved!'))
-          })
+            // if the config contains a syncBucket path then try to sync the DB to the bucket
+            syncS3(db, config);
+          });
       })
       .catch(err => {
         console.log(
