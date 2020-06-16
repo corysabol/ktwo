@@ -34,7 +34,6 @@ function syncS3(db, config) {
     Tagging: "application=k2&type=kdbx4"
   };
 
-  console.log(config.get('syncBucket').split('/').pop());
   let configUploadParams = {
     Body: fs.readFileSync(config.path),
     Bucket: config.get('syncBucket').split('/').pop(),
