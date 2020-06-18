@@ -65,7 +65,8 @@ function findEntry() {}
 
 function entryField(entry, fieldName) {
   const value = entry.fields[fieldName];
-  return (value && value instanceof kdbxweb.ProtectedValue && value.getText()) || value || '';
+  const isProtected = value instanceof kdbxweb.ProtectedValue;
+  return (value && isProtected && value.getText()) || value || '';
 }
 
 function listEntry(entry, color) {
