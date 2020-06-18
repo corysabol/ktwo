@@ -63,13 +63,19 @@ function listGroup() {}
 
 function findEntry() {}
 
+function entryField(entry, fieldName) {
+  const value = entry.fields[fieldName];
+  return (value && value instanceof kdbxweb.ProtectedValue && value.getText()) || value || '';
+}
+
 function listEntry(entry, color) {
+  let password = entry.fields.Password;
   return  chalk.keyword(color)(
-    `  Title:    ${entry.fields.Title}\n` +
-    `  UserName: ${entry.fields.UserName}\n` +
-    `  Password: ${entry.fields.Password}\n` +
-    `  URL:      ${entry.fields.URL}\n` +
-    `  Notes:    ${entry.fields.Notes}\n`
+    `  Title:    ${entryField(entry, 'Title')}\n` +
+    `  UserName: ${entryField(entry, 'UserName')}\n` +
+    `  Password: ${entryField(entry, 'Password')}\n` +
+    `  URL:      ${entryField(entry, 'URL')}\n` +
+    `  Notes:    ${entryField(entry, 'Notes')}\n`
   );
 }
 
@@ -216,7 +222,7 @@ program
         } else {
           password = getRandomPass();
         }
-        //password = kdbxweb.ProtectedValue.fromString(password);
+        password = kdbxweb.ProtectedValue.fromString(password);
         let group;
         if (options.group && options.group !== 'default') {
           // does the group already exist in the db?
