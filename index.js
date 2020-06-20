@@ -28,7 +28,26 @@ kdbxweb.CryptoEngine.argon2 = argon2;
  * @return {Promise}
  */
 function pullS3(s3url) {
+  let parts = s3url.split('/'),
+      bucket = parts[2],
+      keyBase = parts.slice(3).reduce((acc, val) => `${acc}/${val}`);
+  let dbKey = `${keyBase}/${parts[4]}.kdbx`,
+      configKey = `${keyBase}/${parts[4]}.kdbx.json`;
+  console.log(parts);
+  console.log(dbKey, '\n', configKey);
+  let dbPullParams = {
+    Bucket: bucket,
+    Key: dbKey 
+  };
+  let dbPromise = s3.getObject(dbPullParams).promise();
 
+  let configPullParams = {
+    Bucket: bucket,
+    Key: configKey
+  };
+  let configPromise = s3.getObject(configPullParams).promise();
+
+  return Promise.all([dbPromise, configPromise]);
 }
 
 function syncS3(db, config) {
@@ -194,9 +213,13 @@ program
   .alias('p')
   .description('pull a database from s3 using a s3 url e.g. s3://my-bucket/k2/dbname')
   .action(async (s3path, options) => {
-    console.log(
-      chalk.yellow('Not implemented.')
-    );
+    pullS3(s3path)
+      .then(res => {
+        const [dbData, configData] = res;
+        const db = kdbxweb.ByteUtils.bytesToString(dbData.Body),
+              config = kdbxweb.ByteUtils.bytesToString(configData.Body);
+      })
+      .catch(err => console.log(err));
   });
 
 program
