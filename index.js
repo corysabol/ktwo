@@ -17,12 +17,19 @@ const PKG_NAME = 'k2';
 
 // hacky use of the test implementation of argon2 found in kdbxweb
 kdbxweb.CryptoEngine.argon2 = argon2;
-/*kdbxweb.CryptoEngine.argon2 = (password, salt,
-    memory, iterations, length, parallelism, type, version
-) => {
-    // your implementation makes hash (Uint32Array, 'length' bytes)
-    return Promise.resolve(hash);
-};*/
+
+// TODO: Consider implementing storage provider objects under a common interface to facilitate more sync storage options.
+// it's possible that the simplest implementation of this idea would be to just implement each provider as a function
+// that returns a promise.
+
+/**
+ * Pulls a database and it's respective configuration file from the given s3 url.
+ * @param {string} s3url - the S3 URL to the db key in S3 e.g. s3://mybucket/k2/mydb
+ * @return {Promise}
+ */
+function pullS3(s3url) {
+
+}
 
 function syncS3(db, config) {
   // https://docs.aws.amazon.com/AWSJavaScriptSDK/latest/AWS/S3.html#putObject-property
@@ -63,6 +70,39 @@ function listGroup() {}
 
 function findEntry() {}
 
+/**
+ * Handle merging a local and remote version of a database
+ * @param {ArrayBuffer} data - database file contents
+ * @param {ArrayBuffer} remoteData - remote database file contents
+ * @param {KdbxCredentials} credentials - credentials for both databases
+ */
+async function mergeDb() {
+  let db = await kdbxweb.Kdbx.load(data, credentials); // load local db
+  // work with db
+  db.save(); // save local db
+  let editStateBeforeSave = db.getLocalEditState(); // save local editing state (serializable to JSON)
+  db.close(); // close local db
+  db = kdbxweb.Kdbx.load(data, credentials); // reopen it again
+  db.setLocalEditState(editStateBeforeSave); // assign edit state obtained before save
+  // work with db
+  let remoteDb = await kdbxweb.Kdbx.load(remoteData, credentials); // load remote db
+  db.merge(remoteDb); // merge remote into local
+  delete remoteDb; // don't use remoteDb anymore
+  let saved = await db.save(); // save local db
+  editStateBeforeSave = db.getLocalEditState(); // save local editing state again
+  let pushedOk = pushToUpstream(saved); // push db to upstream
+  if (pushedOk) {
+      db.removeLocalEditState(); // clear local editing state
+      editStateBeforeSave = null; // and discard it
+  }
+}
+
+/** 
+ * Get the value of a field in an entry, returns the plain text value of kdbx.ProtectedValue
+ * @param {KdbxEntry} entry - the entry to retrieve a field value
+ * @param {string} fieldName - the name of the entry field to retreive
+ * @return {string} - the value in a field or ''
+ */
 function entryField(entry, fieldName) {
   const value = entry.fields[fieldName];
   const isProtected = value instanceof kdbxweb.ProtectedValue;
@@ -321,3 +361,4 @@ async function main() {
   program.parseAsync(process.argv);
 }
 main();
+
