@@ -70,15 +70,7 @@ function syncS3(db, config) {
   let dbUploadPromise = s3.putObject(dbUploadParams).promise();
   let configUploadPromise = s3.putObject(configUploadParams).promise();
 
-  Promise.all([dbUploadPromise, configUploadPromise]).then(values => {
-    console.log(
-      chalk.green('DB synced to S3 bucket!')
-    );
-  }).catch(err => {
-    console.log(
-      chalk.red(err)
-    );
-  });
+  return Promise.all([dbUploadPromise, configUploadPromise]);
 }
 
 function getRandomPass() {}
@@ -139,7 +131,23 @@ function listEntry(entry, color) {
   );
 }
 
-function ask(prompt, type) {}
+function ask(prompt, type) {
+  const questions = [
+    {
+      name: 'question',
+      type: type,
+      message: prompt,
+      validate: (value) => {
+        if (value.length) {
+          return true;
+        } else {
+          return prompt
+        }
+      }
+    },
+  ];
+  return inquirer.prompt(questions);
+}
 
 function askPassword(prompt) {
   const questions = [
@@ -216,8 +224,11 @@ program
     pullS3(s3path)
       .then(res => {
         const [dbData, configData] = res;
-        const db = kdbxweb.ByteUtils.bytesToString(dbData.Body),
-              config = kdbxweb.ByteUtils.bytesToString(configData.Body);
+        const dbname = s3path.split('/').pop();
+        const config = new ConfigStore(
+          `${PKG_NAME}-${dbname}`,
+          JSON.parse(kdbxweb.ByteUtils.bytesToString(configData.Body))
+        );
       })
       .catch(err => console.log(err));
   });
@@ -226,30 +237,24 @@ program
   .command('sync <dbpath>')
   .alias('s')
   .description('manually push a db file to it\'s configured S3 bucket')
-  .option('s --bucket <bucket>', 'override the configured S3 url with the one supplied to this flag - s3://bucket-name')
+  .option('-s --bucket <bucket>', 'override the configured S3 url with the one supplied to this flag - s3://bucket-name')
   .action(async (dbpath, options) => {
-    let dbname = dbpath.split('/').pop();
-    let config = new ConfigStore(`${PKG_NAME}-${dbname}`);
-    let password = await askPassword('Enter the database password:');
-    let credentials = new kdbxweb.Credentials(kdbxweb.ProtectedValue.fromString(password.password));
-    console.log(
-      chalk.yellow('Verifying access...')
-    );
-    const data = new Uint8Array(fs.readFileSync(dbpath));
-    // load the db to make sure the use has permission to upload the database by knowing the password for the db itself
-    let dbPromise = kdbxweb.Kdbx.load(data.buffer, credentials);
-    dbPromise
-      .then(async _db => {
-        // save the db and upload the re-locked data
-        _db.save()
-          .then(db => {
-            syncS3(db, config); 
-          });
+    const dbname = dbpath.split('/').pop();
+    const config = new ConfigStore(`${PKG_NAME}-${dbname}`);
+    const db = fs.readFileSync(dbpath);
+    syncS3(db, config)
+      .then(res => {
+        const [dbUploadRes, configUploadRes] = res;
+        console.log(
+          `${dbpath} ${chalk.green('successfully')} synced to ${chalk.cyan(config.get('syncBucket'))}!\n` +
+          `db upload version: ${chalk.cyan(dbUploadRes.VersionId)}\n` +
+          `config upload version: ${chalk.cyan(configUploadRes.VersionId)}`
+        ); 
       })
       .catch(err => {
         console.log(
           chalk.red(err)
-        );
+        ); 
       });
   })
 
@@ -344,7 +349,6 @@ program
       path: dbpath,
       name: dbname,
       syncBucket: options.bucket,
-      foo: 'bar'
     });
     console.log(
       chalk.yellow(`config file: ${config.path}`)
@@ -356,8 +360,6 @@ program
     let password = await askPassword();
     let credentials = new kdbxweb.Credentials(kdbxweb.ProtectedValue.fromString(password.password));
     let newDb = kdbxweb.Kdbx.create(credentials, dbname);
-    //let group = newDb.createGroup(newDb.getDefaultGroup(), 'k2');
-    //let entry = newDb.createEntry(group);
     // write the database file out.
     newDb.upgrade();
     newDb.save()
