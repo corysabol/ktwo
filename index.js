@@ -87,25 +87,20 @@ function findEntry() {}
  * @param {ArrayBuffer} remoteData - remote database file contents
  * @param {KdbxCredentials} credentials - credentials for both databases
  */
-async function mergeDb() {
-  let db = await kdbxweb.Kdbx.load(data, credentials); // load local db
-  // work with db
-  db.save(); // save local db
+function mergeDb(db, remoteDb) {
   let editStateBeforeSave = db.getLocalEditState(); // save local editing state (serializable to JSON)
-  db.close(); // close local db
-  db = kdbxweb.Kdbx.load(data, credentials); // reopen it again
   db.setLocalEditState(editStateBeforeSave); // assign edit state obtained before save
   // work with db
-  let remoteDb = await kdbxweb.Kdbx.load(remoteData, credentials); // load remote db
   db.merge(remoteDb); // merge remote into local
   delete remoteDb; // don't use remoteDb anymore
-  let saved = await db.save(); // save local db
-  editStateBeforeSave = db.getLocalEditState(); // save local editing state again
-  let pushedOk = pushToUpstream(saved); // push db to upstream
-  if (pushedOk) {
-      db.removeLocalEditState(); // clear local editing state
-      editStateBeforeSave = null; // and discard it
-  }
+  return db;
+  //let saved = await db.save(); // save local db
+  //editStateBeforeSave = db.getLocalEditState(); // save local editing state again
+  //let pushedOk = pushToUpstream(saved); // push db to upstream
+  //if (pushedOk) {
+  //    db.removeLocalEditState(); // clear local editing state
+  //    editStateBeforeSave = null; // and discard it
+  //}
 }
 
 /** 
@@ -134,7 +129,7 @@ function listEntry(entry, color) {
 function ask(prompt, type) {
   const questions = [
     {
-      name: 'question',
+      name: 'response',
       type: type,
       message: prompt,
       validate: (value) => {
@@ -219,16 +214,20 @@ program
 program
   .command('pull <s3path>')
   .alias('p')
-  .description('pull a database from s3 using a s3 url e.g. s3://my-bucket/k2/dbname')
+  .description('used to initialize a client - pulls a database from s3 using a s3 url e.g. s3://my-bucket/k2/dbname')
   .action(async (s3path, options) => {
+    console.log(
+      chalk.yellow('Not implemented')
+    );
     pullS3(s3path)
-      .then(res => {
-        const [dbData, configData] = res;
+      .then(([dbData, configData]) => {
         const dbname = s3path.split('/').pop();
         const config = new ConfigStore(
           `${PKG_NAME}-${dbname}`,
           JSON.parse(kdbxweb.ByteUtils.bytesToString(configData.Body))
         );
+        // write to disk if there is already a db present that this would overwrite, then instruct 
+        // the user to use the sync command instead.
       })
       .catch(err => console.log(err));
   });
@@ -239,23 +238,56 @@ program
   .description('manually push a db file to it\'s configured S3 bucket')
   .option('-s --bucket <bucket>', 'override the configured S3 url with the one supplied to this flag - s3://bucket-name')
   .action(async (dbpath, options) => {
+    if (options.bucket) {
+      console.log(
+        chalk.yellow('-s|--bucket options is not implemented')
+      );
+    }
     const dbname = dbpath.split('/').pop();
     const config = new ConfigStore(`${PKG_NAME}-${dbname}`);
     const db = fs.readFileSync(dbpath);
-    syncS3(db, config)
-      .then(res => {
-        const [dbUploadRes, configUploadRes] = res;
-        console.log(
-          `${dbpath} ${chalk.green('successfully')} synced to ${chalk.cyan(config.get('syncBucket'))}!\n` +
-          `db upload version: ${chalk.cyan(dbUploadRes.VersionId)}\n` +
-          `config upload version: ${chalk.cyan(configUploadRes.VersionId)}`
-        ); 
+    const s3path = `${config.get('syncBucket')}/${PKG_NAME}/${dbname.split('.')[0]}`;
+    const password = await askPassword('Enter the database password:');
+    const credentials = new kdbxweb.Credentials(kdbxweb.ProtectedValue.fromString(password.password));
+    // try to unlock the local db
+    // load the db
+    console.log(
+      chalk.yellow('Opening local db...')
+    );
+    console.log(s3path);
+    const data = new Uint8Array(fs.readFileSync(dbpath));
+    const dbPromise = kdbxweb.Kdbx.load(data.buffer, credentials);
+    dbPromise.
+      then(db => {
+        // we unlocked the local db
+        const remotePromise = pullS3(s3path);
+        return Promise.all([db, remotePromise]);
       })
-      .catch(err => {
-        console.log(
-          chalk.red(err)
-        ); 
-      });
+      .then(([db, remoteRes]) => {
+        // extract the body out of the remoteRes
+        const [dbRemoteRes, configRemoteRes] = remoteRes;
+        const dbRemoteData = new Uint8Array(dbRemoteRes.Body).buffer;
+        const configRemoteData = configRemoteRes.Body;
+        // unlock the remote and do some more complex promise chaining
+        const dbRemoteUnlockedP = kdbxweb.Kdbx.load(dbRemoteData, credentials);
+        return Promise.all([
+          db,
+          dbRemoteUnlockedP,
+          configRemoteData,
+        ]);
+      })
+      .then(([
+        dbLocalUnlocked,
+        dbRemoteUnlocked,
+        configRemoteData,
+      ]) => {
+        // finally we can begin merging things and then upload the results
+        const mergedDb = mergeDb(dbLocalUnlocked, dbRemoteUnlocked);
+        console.log(mergedDb);
+        //const mergedConfig = config // TODO: implement config merging
+        //return syncS3(mergedDb, mergedConfig);
+      })
+      .catch(err => console.log(chalk.red(err)));
   })
 
 program
