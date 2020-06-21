@@ -32,7 +32,7 @@ function pullS3(s3url) {
       bucket = parts[2],
       keyBase = parts.slice(3).reduce((acc, val) => `${acc}/${val}`);
   let dbKey = `${keyBase}/${parts[4]}.kdbx`,
-      configKey = `${keyBase}/${parts[4]}.kdbx.json`;
+      configKey = `${keyBase}/${parts[4]}.json`;
   console.log(parts);
   console.log(dbKey, '\n', configKey);
   let dbPullParams = {
@@ -284,11 +284,18 @@ program
       ]) => {
         // finally we can begin merging things and then upload the results
         const mergedDb = mergeDb(dbLocalUnlocked, dbRemoteUnlocked);
-        console.log(mergedDb);
-        //const mergedConfig = config // TODO: implement config merging
-        //return syncS3(mergedDb, mergedConfig);
+        return mergedDb.save();
       })
-      .catch(err => console.log(chalk.red(err)));
+      .then(db => {
+        // write the db contents to disk then upload to s3
+        const data = new Uint8Array(db);
+        fs.writeFileSync(dbpath, data);
+        return syncS3(db, config);
+      })
+      .then(([dbUploadRes, configUploadRes]) => {
+        console.log(dbUploadRes, configUploadRes);
+      })
+      .catch(err => console.log(err, err.stack));
   })
 
 program
