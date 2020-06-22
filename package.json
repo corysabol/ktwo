@@ -9,7 +9,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/corysabol/k2.git"
+    "url": "git+https://github.com/corysabol/ktwo.git"
   },
   "keywords": [
     "keepass2",
@@ -19,9 +19,9 @@
   "author": "Cory Sabol",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/corysabol/k2/issues"
+    "url": "https://github.com/corysabol/ktwo/issues"
   },
-  "homepage": "https://github.com/corysabol/k2#readme",
+  "homepage": "https://github.com/corysabol/ktwo#readme",
   "dependencies": {
     "aws-sdk": "^2.696.0",
     "chalk": "^4.1.0",
