@@ -13,7 +13,7 @@ const ConfigStore = require('configstore');
 const AWS = require('aws-sdk');
 const s3 = new AWS.S3();
 
-const PKG_NAME = 'k2';
+const PKG_NAME = 'ktwo';
 
 // hacky use of the test implementation of argon2 found in kdbxweb
 kdbxweb.CryptoEngine.argon2 = argon2;
@@ -435,7 +435,7 @@ program
 async function main() {
   console.log(
     chalk.green(
-      figlet.textSync('k2', { horizontalLayout: 'full' })
+      figlet.textSync(PKG_NAME, { horizontalLayout: 'full' })
     )
   );
   program.parseAsync(process.argv);

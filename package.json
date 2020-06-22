@@ -1,5 +1,5 @@
 {
-  "name": "k2",
+  "name": "ktwo",
   "version": "0.1.0-alpha.1",
   "description": "Simple CLI wrapper around the keexweb library of the awesome keeweb!",
   "main": "index.js",
@@ -33,6 +33,6 @@
     "kdbxweb": "^1.9.0"
   },
   "bin": {
-    "k2": "./index.js"
+    "ktwo": "./index.js"
   }
 }
