@@ -1,6 +1,6 @@
 {
   "name": "k2",
-  "version": "0.1.0",
+  "version": "0.1.0-alpha.1",
   "description": "Simple CLI wrapper around the keexweb library of the awesome keeweb!",
   "main": "index.js",
   "scripts": {
