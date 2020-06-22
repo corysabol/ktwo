@@ -1,6 +1,6 @@
 {
   "name": "ktwo",
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.1-prerelease",
   "description": "Simple CLI wrapper around the keexweb library of the awesome keeweb!",
   "main": "index.js",
   "scripts": {
