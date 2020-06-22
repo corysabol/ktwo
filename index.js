@@ -33,8 +33,6 @@ function pullS3(s3url) {
       keyBase = parts.slice(3).reduce((acc, val) => `${acc}/${val}`);
   let dbKey = `${keyBase}/${parts[4]}.kdbx`,
       configKey = `${keyBase}/${parts[4]}.json`;
-  console.log(parts);
-  console.log(dbKey, '\n', configKey);
   let dbPullParams = {
     Bucket: bucket,
     Key: dbKey 
@@ -218,17 +216,34 @@ program
   .description('used to initialize a client - pulls a database from s3 using a s3 url e.g. s3://my-bucket/k2/dbname')
   .action(async (s3path, options) => {
     console.log(
-      chalk.yellow('Not implemented')
+      chalk.yellow(`pulling DB file and config from ${s3path}`)
     );
     pullS3(s3path)
       .then(([dbData, configData]) => {
         const dbname = s3path.split('/').pop();
+        const dbPath = path.join(process.env.HOME, '.config', 'configstore', dbname + '.kdbx');
+        const configPath = path.join(process.env.HOME, '.config', 'configstore', 'k2' + dbname + '.json');
         const config = new ConfigStore(
           `${PKG_NAME}-${dbname}`,
           JSON.parse(kdbxweb.ByteUtils.bytesToString(configData.Body))
         );
-        // write to disk if there is already a db present that this would overwrite, then instruct 
-        // the user to use the sync command instead.
+        if (
+          fs.existsSync(dbPath) || 
+          fs.existsSync(configPath)
+        ) {
+          console.log(
+            chalk.yellow('DB already exists, use the sync command instead - k2 sync <dbname>')
+          );
+          return;
+        }
+        console.log(
+          chalk.yellow('writing DB and config to disk...')
+        );
+        fs.writeFileSync(dbPath, dbData.Body);
+        fs.writeFileSync(configPath, configData.Body);
+        console.log(
+          chalk.green('files written!')
+        );
       })
       .catch(err => console.log(err));
   });
