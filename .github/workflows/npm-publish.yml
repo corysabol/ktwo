@@ -5,13 +5,13 @@ name: Node.js Package
 
 on:
   push:
-    branches: 
-      - refs/tags/0.*
-      - refs/tags/1.*
+    tags: 
+      - "0.*"
+      - "1.*"
 
 jobs:
   build:
-    if: github.event.base_ref == 'refs/head/release'
+    #if: github.event.base_ref == 'refs/head/release'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
@@ -22,7 +22,7 @@ jobs:
       - run: npm test
 
   publish-npm:
-    if: github.event.base_ref == 'refs/head/release'
+    #if: github.event.base_ref == 'refs/head/release'
     needs: build
     runs-on: ubuntu-latest
     steps:
