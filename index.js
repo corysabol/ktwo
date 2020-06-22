@@ -17,19 +17,43 @@ const PKG_NAME = 'k2';
 
 // hacky use of the test implementation of argon2 found in kdbxweb
 kdbxweb.CryptoEngine.argon2 = argon2;
-/*kdbxweb.CryptoEngine.argon2 = (password, salt,
-    memory, iterations, length, parallelism, type, version
-) => {
-    // your implementation makes hash (Uint32Array, 'length' bytes)
-    return Promise.resolve(hash);
-};*/
+
+// TODO: Consider implementing storage provider objects under a common interface to facilitate more sync storage options.
+// it's possible that the simplest implementation of this idea would be to just implement each provider as a function
+// that returns a promise.
+
+/**
+ * Pulls a database and it's respective configuration file from the given s3 url.
+ * @param {string} s3url - the S3 URL to the db key in S3 e.g. s3://mybucket/k2/mydb
+ * @return {Promise}
+ */
+function pullS3(s3url) {
+  let parts = s3url.split('/'),
+      bucket = parts[2],
+      keyBase = parts.slice(3).reduce((acc, val) => `${acc}/${val}`);
+  let dbKey = `${keyBase}/${parts[4]}.kdbx`,
+      configKey = `${keyBase}/${parts[4]}.json`;
+  let dbPullParams = {
+    Bucket: bucket,
+    Key: dbKey 
+  };
+  let dbPromise = s3.getObject(dbPullParams).promise();
+
+  let configPullParams = {
+    Bucket: bucket,
+    Key: configKey
+  };
+  let configPromise = s3.getObject(configPullParams).promise();
+
+  return Promise.all([dbPromise, configPromise]);
+}
 
 function syncS3(db, config) {
   // https://docs.aws.amazon.com/AWSJavaScriptSDK/latest/AWS/S3.html#putObject-property
   let dbUploadParams = {
     Body: Buffer.from(db),
     Bucket: config.get('syncBucket').split('/').pop(),
-    Key: `k2/${config.get('name').split('.')[0]}/${config.get('name')}`,
+    Key: `k2/${config.get('name').split('.')[0]}/${config.get('name')}.kdbx`,
     //ServerSideEncryption: 'AES256'
     Tagging: "application=k2&type=kdbx4"
   };
@@ -44,15 +68,7 @@ function syncS3(db, config) {
   let dbUploadPromise = s3.putObject(dbUploadParams).promise();
   let configUploadPromise = s3.putObject(configUploadParams).promise();
 
-  Promise.all([dbUploadPromise, configUploadPromise]).then(values => {
-    console.log(
-      chalk.green('DB synced to S3 bucket!')
-    );
-  }).catch(err => {
-    console.log(
-      chalk.red(err)
-    );
-  });
+  return Promise.all([dbUploadPromise, configUploadPromise]);
 }
 
 function getRandomPass() {}
@@ -63,6 +79,34 @@ function listGroup() {}
 
 function findEntry() {}
 
+/**
+ * Handle merging a local and remote version of a database
+ * @param {ArrayBuffer} data - database file contents
+ * @param {ArrayBuffer} remoteData - remote database file contents
+ * @param {KdbxCredentials} credentials - credentials for both databases
+ */
+function mergeDb(db, remoteDb) {
+  let editStateBeforeSave = db.getLocalEditState(); // save local editing state (serializable to JSON)
+  db.setLocalEditState(editStateBeforeSave); // assign edit state obtained before save
+  // work with db
+  db.merge(remoteDb); // merge remote into local
+  delete remoteDb; // don't use remoteDb anymore
+  return db;
+  //let saved = await db.save(); // save local db
+  //editStateBeforeSave = db.getLocalEditState(); // save local editing state again
+  //let pushedOk = pushToUpstream(saved); // push db to upstream
+  //if (pushedOk) {
+  //    db.removeLocalEditState(); // clear local editing state
+  //    editStateBeforeSave = null; // and discard it
+  //}
+}
+
+/** 
+ * Get the value of a field in an entry, returns the plain text value of kdbx.ProtectedValue
+ * @param {KdbxEntry} entry - the entry to retrieve a field value
+ * @param {string} fieldName - the name of the entry field to retreive
+ * @return {string} - the value in a field or ''
+ */
 function entryField(entry, fieldName) {
   const value = entry.fields[fieldName];
   const isProtected = value instanceof kdbxweb.ProtectedValue;
@@ -80,7 +124,23 @@ function listEntry(entry, color) {
   );
 }
 
-function ask(prompt, type) {}
+function ask(prompt, type) {
+  const questions = [
+    {
+      name: 'response',
+      type: type,
+      message: prompt,
+      validate: (value) => {
+        if (value.length) {
+          return true;
+        } else {
+          return prompt
+        }
+      }
+    },
+  ];
+  return inquirer.prompt(questions);
+}
 
 function askPassword(prompt) {
   const questions = [
@@ -102,15 +162,16 @@ function askPassword(prompt) {
 
 program.version('0.1.0');
 program
-  .command('list <dbpath>')
+  .command('list <dbname>')
   .alias('l')
   .description('list the entries in the specified database file')
   .option('-g --group <group>', 'The group to search in')
   .option('-t --title <title>', 'The title of the entry to list')
   .option('-a --all', 'List all entries', false)
-  .action(async (dbpath, options) => {
+  .action(async (dbname, options) => {
     let password = await askPassword();
     let credentials = new kdbxweb.Credentials(kdbxweb.ProtectedValue.fromString(password.password));
+    const dbpath = path.join(process.env.HOME, '.config', 'configstore', dbname + '.kdbx'); 
     const data = new Uint8Array(fs.readFileSync(dbpath));
     kdbxweb.Kdbx.load(data.buffer, credentials)
       .then(db => {
@@ -152,46 +213,108 @@ program
 program
   .command('pull <s3path>')
   .alias('p')
-  .description('pull a database from s3 using a s3 url e.g. s3://my-bucket/k2/dbname')
+  .description('used to initialize a client - pulls a database from s3 using a s3 url e.g. s3://my-bucket/k2/dbname')
   .action(async (s3path, options) => {
     console.log(
-      chalk.yellow('Not implemented.')
+      chalk.yellow(`pulling DB file and config from ${s3path}`)
     );
+    pullS3(s3path)
+      .then(([dbData, configData]) => {
+        const dbname = s3path.split('/').pop();
+        const dbPath = path.join(process.env.HOME, '.config', 'configstore', dbname + '.kdbx');
+        const configPath = path.join(process.env.HOME, '.config', 'configstore', 'k2' + dbname + '.json');
+        const config = new ConfigStore(
+          `${PKG_NAME}-${dbname}`,
+          JSON.parse(kdbxweb.ByteUtils.bytesToString(configData.Body))
+        );
+        if (
+          fs.existsSync(dbPath) || 
+          fs.existsSync(configPath)
+        ) {
+          console.log(
+            chalk.yellow('DB already exists, use the sync command instead - k2 sync <dbname>')
+          );
+          return;
+        }
+        console.log(
+          chalk.yellow('writing DB and config to disk...')
+        );
+        fs.writeFileSync(dbPath, dbData.Body);
+        fs.writeFileSync(configPath, configData.Body);
+        console.log(
+          chalk.green('files written!')
+        );
+      })
+      .catch(err => console.log(err));
   });
 
 program
-  .command('sync <dbpath>')
+  .command('sync <dbname>')
   .alias('s')
   .description('manually push a db file to it\'s configured S3 bucket')
-  .option('s --bucket <bucket>', 'override the configured S3 url with the one supplied to this flag - s3://bucket-name')
-  .action(async (dbpath, options) => {
-    let dbname = dbpath.split('/').pop();
-    let config = new ConfigStore(`${PKG_NAME}-${dbname}`);
-    let password = await askPassword('Enter the database password:');
-    let credentials = new kdbxweb.Credentials(kdbxweb.ProtectedValue.fromString(password.password));
+  .option('-s --bucket <bucket>', 'override the configured S3 url with the one supplied to this flag - s3://bucket-name')
+  .action(async (dbname, options) => {
+    if (options.bucket) {
+      console.log(
+        chalk.yellow('-s|--bucket options is not implemented')
+      );
+    }
+    const dbpath = path.join(process.env.HOME, '.config', 'configstore', dbname + '.kdbx');
+    const config = new ConfigStore(`${PKG_NAME}-${dbname}`);
+    const db = fs.readFileSync(dbpath);
+    const s3path = `${config.get('syncBucket')}/${PKG_NAME}/${dbname.split('.')[0]}`;
+    const password = await askPassword('Enter the database password:');
+    const credentials = new kdbxweb.Credentials(kdbxweb.ProtectedValue.fromString(password.password));
+    // try to unlock the local db
+    // load the db
     console.log(
-      chalk.yellow('Verifying access...')
+      chalk.yellow('Opening local db...')
     );
+    console.log(s3path);
     const data = new Uint8Array(fs.readFileSync(dbpath));
-    // load the db to make sure the use has permission to upload the database by knowing the password for the db itself
-    let dbPromise = kdbxweb.Kdbx.load(data.buffer, credentials);
-    dbPromise
-      .then(async _db => {
-        // save the db and upload the re-locked data
-        _db.save()
-          .then(db => {
-            syncS3(db, config); 
-          });
+    const dbPromise = kdbxweb.Kdbx.load(data.buffer, credentials);
+    dbPromise.
+      then(db => {
+        // we unlocked the local db
+        const remotePromise = pullS3(s3path);
+        return Promise.all([db, remotePromise]);
       })
-      .catch(err => {
-        console.log(
-          chalk.red(err)
-        );
-      });
+      .then(([db, remoteRes]) => {
+        // extract the body out of the remoteRes
+        const [dbRemoteRes, configRemoteRes] = remoteRes;
+        const dbRemoteData = new Uint8Array(dbRemoteRes.Body).buffer;
+        const configRemoteData = configRemoteRes.Body;
+        // unlock the remote and do some more complex promise chaining
+        const dbRemoteUnlockedP = kdbxweb.Kdbx.load(dbRemoteData, credentials);
+        return Promise.all([
+          db,
+          dbRemoteUnlockedP,
+          configRemoteData,
+        ]);
+      })
+      .then(([
+        dbLocalUnlocked,
+        dbRemoteUnlocked,
+        configRemoteData,
+      ]) => {
+        // finally we can begin merging things and then upload the results
+        const mergedDb = mergeDb(dbLocalUnlocked, dbRemoteUnlocked);
+        return mergedDb.save();
+      })
+      .then(db => {
+        // write the db contents to disk then upload to s3
+        const data = new Uint8Array(db);
+        fs.writeFileSync(dbpath, data);
+        return syncS3(db, config);
+      })
+      .then(([dbUploadRes, configUploadRes]) => {
+        console.log(dbUploadRes, configUploadRes);
+      })
+      .catch(err => console.log(err, err.stack));
   })
 
 program
-  .command('add <dbpath>')
+  .command('add <dbname>')
   .alias('a')
   .description('add a new entry to the database with an autogenerated password')
   .option('-g --group <groupname>', 'The group to add the entry to', 'default')
@@ -200,8 +323,8 @@ program
   .option('--url <url>', 'The URL of the entry')
   .option('-n --note <note>', 'A note for the entry')
   .option('-a --askpass', 'If supplied the user will be prompted for a password, otherwise a random one is generated', false)
-  .action(async (dbpath, options) => {
-    let dbname = dbpath.split('/').pop();
+  .action(async (dbname, options) => {
+    let dbpath = path.join(process.env.HOME, '.config', 'configstore', dbname + '.kdbx');
     let config = new ConfigStore(`${PKG_NAME}-${dbname}`);
     let password = await askPassword('Enter the database password:');
     let credentals = new kdbxweb.Credentials(kdbxweb.ProtectedValue.fromString(password.password));
@@ -271,17 +394,16 @@ program
   });
 
 program
-  .command('newdb <dbpath>')
+  .command('newdb <dbname>')
   .alias('n')
   .description('create a new database file')
   .option('-s --bucket <bucket>', 'The s3 url to sync the database and config to', '')
-  .action(async (dbpath, options) => {
-    let dbname = dbpath.split('/').pop();
+  .action(async (dbname, options) => {
+    const dbpath = path.resolve(`${process.env.HOME}/.config/configstore/${dbname}.kdbx`);
+    console.log(dbpath);
     let config = new ConfigStore(`${PKG_NAME}-${dbname}`, {
-      path: dbpath,
       name: dbname,
       syncBucket: options.bucket,
-      foo: 'bar'
     });
     console.log(
       chalk.yellow(`config file: ${config.path}`)
@@ -293,8 +415,6 @@ program
     let password = await askPassword();
     let credentials = new kdbxweb.Credentials(kdbxweb.ProtectedValue.fromString(password.password));
     let newDb = kdbxweb.Kdbx.create(credentials, dbname);
-    //let group = newDb.createGroup(newDb.getDefaultGroup(), 'k2');
-    //let entry = newDb.createEntry(group);
     // write the database file out.
     newDb.upgrade();
     newDb.save()
@@ -321,3 +441,4 @@ async function main() {
   program.parseAsync(process.argv);
 }
 main();
+
