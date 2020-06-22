@@ -5,6 +5,9 @@ name: Node.js Package
 
 on:
   push:
+    branches: 
+      - refs/tags/0.*
+      - refs/tags/1.*
 
 jobs:
   build:
